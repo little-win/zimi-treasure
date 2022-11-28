@@ -1,0 +1,218 @@
+import os
+import cv2
+import numpy as np
+import matplotlib.pyplot as plt
+from sklearn import svm
+from sklearn.ensemble import RandomForestClassifier
+from sklearn.model_selection import train_test_split
+from sklearn.metrics import accuracy_score, confusion_matrix, classification_report
+from sklearn import tree
+import seaborn as sns
+
+def plt_demo(image):
+    plt.hist(image.ravel(),256,[0,256])
+    plt.show("直方图")
+kernel1 = np.array((
+    [0, -1, 0],
+    [-1, 4, -1],
+    [0, -1, 0]))
+org_img_folder = './org'
+# 检索文件
+def getFileList(dir, Filelist, ext=None):
+    """
+    获取文件夹及其子文件夹中文件列表
+    输入 dir：文件夹根目录
+    输入 ext: 扩展名
+    返回： 文件路径列表
+    """
+    newDir = dir
+    if os.path.isfile(dir):
+        if ext is None:
+            Filelist.append(dir)
+        else:
+            if ext in dir[-3:]:
+                Filelist.append(dir)
+
+    elif os.path.isdir(dir):
+        for s in os.listdir(dir):
+            newDir = os.path.join(dir, s)
+            getFileList(newDir, Filelist, ext)
+    return Filelist
+#这个是文件的路径，最后要对他进行 cover stago的应用
+imglist = getFileList(r'C:\Users\Lenovo\Desktop\machine learn homeework\cover debuchong', [], 'pgm')
+print('本次执行检索到 ' + str(len(imglist)) + ' 张图像\n')
+temp=int(str(len(imglist)))
+x=np.zeros((temp,512,512))
+#x是原始图像的2x2矩阵模型
+#x2是进行kernal1卷积后的残差卷积，需对其进行直方图与归一化操作
+x2=np.zeros((temp,512,512))
+i=0
+
+for imgpath in imglist:
+    imgname = os.path.splitext(os.path.basename(imgpath))[0]
+    img = cv2.imread(imgpath, cv2.IMREAD_GRAYSCALE)
+    # 对每幅图像执行相关操作
+    # 想法为将每张图片全部读入创建卷积再取直方图
+    x[i, :, :] = img
+    x2[i,:,:] = cv2.filter2D(img, -1, kernel1)
+    i+=1
+
+#print(x2)
+
+imglist = getFileList(r'C:\Users\Lenovo\Desktop\machine learn homeework\stego debuchong', [], 'pgm')
+print('本次执行检索到 ' + str(len(imglist)) + ' 张图像\n')
+temp1=int(str(len(imglist)))
+x=np.zeros((temp1,512,512))
+#x是原始图像的2x2矩阵模型
+#x2是进行kernal1卷积后的残差卷积，需对其进行直方图与归一化操作
+x21=np.zeros((temp,512,512))
+i=0
+
+for imgpath in imglist:
+    imgname = os.path.splitext(os.path.basename(imgpath))[0]
+    img = cv2.imread(imgpath, cv2.IMREAD_GRAYSCALE)
+    # 对每幅图像执行相关操作
+    # 想法为将每张图片全部读入创建卷积再取直方图
+    x[i, :, :] = img
+    x21[i,:,:] = cv2.filter2D(img, -1, kernel1)
+    i+=1
+
+#print(x2)
+
+#把x21与x2合并
+x2=np.concatenate((x2,x21),axis=0)
+
+
+
+
+#k为h（k）即卷积后得到的k的值的数目 理论上来说k=0最多
+k=12
+#x3是残差得到的统计量 正负一块算
+x3=np.zeros((temp+temp1,k))
+i=0
+for i in range(temp+temp1):
+    for m in range(511):
+        for n in range(511):
+            for r in range(k):
+                if (x2[i,m,n]==r):
+                    x3[i,r]=x3[i,r]+1
+                if (x2[i, m, n] == -r):
+                    x3[i,r]=x3[i,r]+1
+print('-----------------------------------------------\n')
+#由于所有的都加了两遍，对其进行除二操作
+for i in range(temp+temp1):
+    for r in range(k):
+        x3[i,r]=x3[i,r]/2
+#print(x3)
+#取其归一化
+for i in range(temp+temp1):
+    a1 = (np.sum(x3[i]))
+    for r in range(k):
+        x3[i,r]=x3[i,r]/a1
+#print(x3)
+#输出x3的维度
+print('-----------------------------------------------\n')
+print(x3.shape)
+print('-----------------------------------------------\n')
+
+#用获取的向量x3实现svm分类方法
+#这里的svm方法是用sklearn中的svm方法
+# 生成数据
+X = x3
+# 生成标签
+y = np.zeros((temp+temp1,1))
+for i in range(0,temp):
+    y[i]=0
+for i in range(temp,temp+temp1):
+    y[i]=1
+# 划分训练集和测试集
+X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.2, random_state=32)
+# 生成模型
+clf = svm.SVC(kernel='linear', C=1, gamma=1)
+# 训练模型
+clf.fit(X_train, y_train.ravel())
+#输出支撑向量
+print(clf.support_vectors_)
+# 预测
+y_pred = clf.predict(X_test)
+# 评估
+print('准确率：', accuracy_score(y_test, y_pred))
+print('混淆矩阵：\n', confusion_matrix(y_test, y_pred))
+#输出混淆矩阵热图
+#写出包含的库函数
+cm = confusion_matrix(y_test, y_pred)
+plt.figure(figsize=(10, 10))
+sns.heatmap(cm, annot=True, fmt='d', cmap='Blues')
+plt.ylabel('Actual')
+plt.xlabel('Predicted')
+plt.show()
+print('分类报告：\n', classification_report(y_test, y_pred))
+print('=============================')
+print('=============================')
+
+
+
+##用获取的向量x3实现决策树分类方法
+#这里的决策树方法是用opencv中的决策树方法
+#引入相关的库
+# 生成数据
+X = x3
+# 生成标签
+y = np.zeros((temp,1))
+for i in range(0,50):
+    y[i]=0
+for i in range(50,100):
+    y[i]=1
+# 划分训练集和测试集
+X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.2, random_state=32)
+# 生成模型
+clf = tree.DecisionTreeClassifier()
+# 训练模型
+clf.fit(X_train, y_train.ravel())
+# 预测
+#获得训练的树的深度
+print(clf.get_depth())
+print('=============================')
+#获得训练的树的叶子节点数
+print(clf.get_n_leaves())
+print('=============================')
+#获得其分类依据
+print(clf.get_params())
+print('=============================')
+y_pred = clf.predict(X_test)
+# 评估
+print('准确率：', accuracy_score(y_test, y_pred))
+print('混淆矩阵：\n', confusion_matrix(y_test, y_pred))
+print('分类报告：\n', classification_report(y_test, y_pred))
+print('=============================')
+print('=============================')
+
+
+
+
+
+#实现随机森林分类方法
+#这里的随机森林方法是用sklearn中的随机森林方法
+#引入相关的库
+# 生成数据
+X = x3
+# 生成标签
+y = np.zeros((temp,1))
+for i in range(0,50):
+    y[i]=0
+for i in range(50,100):
+    y[i]=1
+# 划分训练集和测试集
+X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.2, random_state=32)
+# 生成模型
+clf = RandomForestClassifier(n_estimators=100, max_depth=2,random_state=0)
+# 训练模型
+clf.fit(X_train, y_train.ravel())
+# 预测
+y_pred = clf.predict(X_test)
+# 评估
+print('准确率：', accuracy_score(y_test, y_pred))
+print('混淆矩阵：\n', confusion_matrix(y_test, y_pred))
+print('分类报告：\n', classification_report(y_test, y_pred))
+print('=============================')
+
